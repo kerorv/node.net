@@ -6,7 +6,7 @@ namespace Nodes.net
 {
   class Printer : IService
   {
-    public void HandleMessage(object msg)
+    public Task HandleMessage(Message msg)
     {
       throw new NotImplementedException();
     }
@@ -26,24 +26,35 @@ namespace Nodes.net
 
   class Program
   {
-    static async void MakeProcess(Node node)
+    static async void MakeProcess()
     {
-      Pid pid = await node.CreateProcess(new Printer());
-      Console.WriteLine("Create a process.");
+      Guid pid = await Node.Instance.CreateProcess(new Printer());
+      Console.WriteLine("Create a process[{0}].", pid);
+    }
+
+    static async void ExitProcess(Guid pid)
+    {
+      await Node.Instance.ExitProcess(pid);
+      Console.WriteLine("Process[{0}] exit.", pid);
+    }
+
+    static async void TerminateProcess(Guid pid)
+    {
+      await Node.Instance.TerminateProcess(pid);
+      Console.WriteLine("Process[{0}] exit.", pid);
     }
 
     static void Main(string[] args)
     {
       Console.WriteLine("Hello World!");
 
-      Node node = new Node();
       while (true)
       {
         string input = Console.ReadLine();
         if (input == "quit")
         {
           Console.WriteLine("quit.");
-          return;
+          break;
         }
         else
         {
@@ -54,21 +65,35 @@ namespace Nodes.net
           }
 
           string command = tokens[0];
-          if (command == "c")
+          if (command == "CreateProcess")
           {
-            MakeProcess(node);
+            MakeProcess();
           }
-          else if (command == "p")
+          else if (command == "ExitProcess")
           {
             if (tokens.Length < 2)
             {
-              Console.WriteLine("wrong command.");
+              Console.WriteLine("invalid param.");
               continue;
             }
+
+            Guid pid = Guid.Parse(tokens[1]);
+            ExitProcess(pid);
+          }
+          else if (command == "TerminateProcess")
+          {
+            if (tokens.Length < 2)
+            {
+              Console.WriteLine("invalid param.");
+              continue;
+            }
+
+            Guid pid = Guid.Parse(tokens[1]);
+            TerminateProcess(pid);
           }
           else
           {
-            Console.WriteLine("uknown command");
+            Console.WriteLine("unknown command");
           }
         }
       }

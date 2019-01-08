@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Concurrent;
 using System.Threading;
 using System.Threading.Tasks;
@@ -6,8 +7,7 @@ namespace Nodes
 {
   public class Process
   {
-    private Pid id;
-    private ConcurrentQueue<Message> msgs;
+    private ConcurrentQueue<Message> msgs = new ConcurrentQueue<Message>();
     private enum State { Idle = 0, Running = 1 }
     private State state = State.Idle;
     private IService service;
@@ -19,9 +19,10 @@ namespace Nodes
     public Process(IService service)
     {
       this.service = service;
+      this.Pid = Guid.NewGuid();
     }
 
-    public Pid Pid { get; }
+    public Guid Pid { get; private set; }
 
     public void PostMessage(Message msg)
     {
@@ -40,11 +41,11 @@ namespace Nodes
       ThreadPool.QueueUserWorkItem(this.Run, null);
     }
 
-    private void Run(object param)
+    private async void Run(object param)
     {
       // check state == Running
       // TODO:
-
+      
       const int MessageCountOnce = 32;
       for (int i = 0; i < MessageCountOnce; ++i)
       {
@@ -59,6 +60,7 @@ namespace Nodes
           // handle system message
           if (msg.content is ExitCommand command)
           {
+            await this.service?.Release();
             command.exitEvent.SetResult(null);
             return;
           }
@@ -66,7 +68,7 @@ namespace Nodes
         else
         {
           // handle application message
-          this.service?.HandleMessage(msg);
+          await this.service?.HandleMessage(msg);
         }
       }
 
@@ -87,17 +89,6 @@ namespace Nodes
       if (interrupt)
       {
         msgs.Clear();
-      }
-
-      lock (this)
-      {
-        if (state == State.Idle)
-        {
-          if (msgs.IsEmpty || interrupt)
-          {
-            return Task.CompletedTask;
-          }
-        }
       }
 
       var cmd = new ExitCommand();

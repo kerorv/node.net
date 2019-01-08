@@ -26,7 +26,7 @@ namespace Nodes.Net
         buffer, this.nextRecvPos, buffer.Length - this.nextRecvPos);
       int recvBytes = await this.socket.ReceiveAsync(segment, SocketFlags.None);
       this.nextRecvPos += recvBytes;
-      int parsePos = ParsePacket();
+      int parsePos = ParsePackets();
       if (parsePos != 0)
       {
         Array.Copy(buffer, parsePos, buffer, 0, this.nextRecvPos - parsePos);
@@ -34,7 +34,7 @@ namespace Nodes.Net
       }
     }
 
-    private int ParsePacket()
+    private int ParsePackets()
     {
       int idx = 0;
       while (idx < this.nextRecvPos)
@@ -67,6 +67,7 @@ namespace Nodes.Net
 
     private void OnMessage(Message message)
     {
+      Node.Instance.PostMessage(message);
     }
   }
 }

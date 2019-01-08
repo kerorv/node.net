@@ -11,8 +11,8 @@ namespace Nodes.Net
   {
     private IPEndPoint serverEP = new IPEndPoint(IPAddress.Any, 10021);
     private Socket serverSocket;
-    private CancellationTokenSource cts = new CancellationTokenSource();
-    private ConcurrentDictionary<IPEndPoint, Lazy<OutgoingChannel>> outChannels;
+    private ConcurrentDictionary<IPEndPoint, Lazy<OutgoingChannel>> outChannels =
+      new ConcurrentDictionary<IPEndPoint, Lazy<OutgoingChannel>>();
 
     internal void Start()
     {
@@ -29,9 +29,11 @@ namespace Nodes.Net
       channel.Start();
     }
 
-    internal void Send(Message msg)
+    internal void Send(IPEndPoint address, Message msg)
     {
-      var lazyChannel = outChannels.GetOrAdd(msg.to.address, key => new Lazy<OutgoingChannel>(()=>new OutgoingChannel(key)));
+      var lazyChannel = outChannels.GetOrAdd(
+        address, key => new Lazy<OutgoingChannel>(
+          () => new OutgoingChannel(key)));
       var channel = lazyChannel.Value;
       channel.Send(msg);
     }

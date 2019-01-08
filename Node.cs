@@ -1,103 +1,111 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Net;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 
 namespace Nodes
 {
-  class Node
+  public sealed class Node
   {
-    private ConcurrentDictionary<Pid, Process> processes;
-    struct Capacity
+    private class ProcessInfo
     {
-      private int memoryPercent;
-      private int cpuPercent;
-      private int memoryLimit;
+      internal Process Process { get; set; }
+      internal IPEndPoint Address { get; set; }
     }
-    Capacity capacity;
-    SortedSet<string> typeRegistry;
+    private ConcurrentDictionary<Guid, ProcessInfo> pis = new ConcurrentDictionary<Guid, ProcessInfo>();
+
+    private Net.Hub hub = new Net.Hub();
+    private static readonly Lazy<Node> lazy = new Lazy<Node>(() => new Node());
+    public static Node Instance { get { return lazy.Value; } }
+
+    private Node()
+    {
+    }
 
     void Start()
     {
-      ThreadPool.SetMaxThreads(Environment.ProcessorCount, Environment.ProcessorCount);
+      hub.Start();
     }
 
-    public async Task<ServiceRef<T>> GetSerice<T>(long serviceId) where T : class
+    public void PostMessage(Message msg)
     {
-
-    }
-
-    public void PostMessage(Pid target, Message msg)
-    {
-      Process process = null;
-      if (!processes.TryGetValue(target, out process))
+      ProcessInfo pi;
+      if (!pis.TryGetValue(msg.to, out pi))
       {
         return;
       }
 
-      process.PostMessage(msg);
-    }
-
-    public Pid GetServicePid(long instanceId)
-    {
-      // get name service from configuration
-      // TODO:
-      Pid nameService;
-      nameService.id = 0x0000000100000000;
-      nameService.address = "127.0.0.1:10039";
-
-      Message queryMsg;
-      queryMsg.isSystemMsg = false;
-      queryMsg.from = this.id;
-      queryMsg.to = nameService;
-      class QueryCommand
+      if (pi.Process != null)
       {
-        public long InstanceId; 
+        // local process
+        pi.Process.PostMessage(msg);
+        return;
       }
-      queryMsg.content = new QueryCommand(InstanceId = instanceId);
-      Nodes.Node.PostMessage(nameService, queryMsg);
+
+      // remote process
+      if (pi.Address == null)
+      {
+        // query address
+        pi.Address = GetProcessAddress(msg.to);
+      }
+
+      hub.Send(pi.Address, msg);
     }
 
-    public async Task<Pid> CreateProcess(IService service)
+    public IPEndPoint GetProcessAddress(Guid pid)
+    {
+      throw new NotImplementedException();
+    }
+
+    public async Task<Guid> CreateProcess(IService service)
     {
       var task = await Task.Factory.StartNew(async () =>
         {
           Process process = new Process(service);
           await service.Init(process);
+          pis.TryAdd(process.Pid, new ProcessInfo { Process = process });
           return process.Pid;
         });
-      
+
       return task.Result;
     }
 
-    public async Task ExitProcess(Pid pid)
+    public async Task ExitProcess(Guid pid)
     {
-      Process process = null;
-      if (!processes.TryRemove(pid, out process))
-      {
-        await Task.CompletedTask;
-      }
-
-      await process.Exit(false);
-    }
-
-    public void TerminateProcess(Pid pid)
-    {
-      Process process = null;
-      if (!processes.TryRemove(pid, out process))
+      ProcessInfo pi;
+      if (!pis.TryRemove(pid, out pi))
       {
         return;
       }
 
-      process.Exit(true);
+      if (pi.Process == null)
+      {
+        // can't exit remote process
+        return;
+      }
+
+      await pi.Process.Exit(false);
     }
 
-    public Task RegisterAppType(Type type)
+    public async Task TerminateProcess(Guid pid)
     {
-      return Task.CompletedTask;
-      // typeRegistry.Add(type.ToString());
+      ProcessInfo pi;
+      if (!pis.TryRemove(pid, out pi))
+      {
+        return;
+      }
+
+      if (pi.Process == null)
+      {
+        // can't exit remote process
+        return;
+      }
+
+      await pi.Process.Exit(true);
     }
+
   }
 }

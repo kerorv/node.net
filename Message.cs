@@ -6,15 +6,15 @@ namespace Nodes
   public struct Message
   {
     public bool isSystemMsg;
-    public Pid from;
-    public Pid to;
+    public Guid from;
+    public Guid to;
     public object content;
 
     public static string Serialize(Message message)
     {
       JObject jobject = new JObject();
-      jobject["from"] = message.from.id;
-      jobject["to"] = message.to.id;
+      jobject["from"] = message.from.ToString();
+      jobject["to"] = message.to.ToString();
       if (message.content != null)
       {
         jobject["type"] = message.content.GetType().ToString();
@@ -29,8 +29,8 @@ namespace Nodes
       JObject jobject = JObject.Parse(jsonString);
 
       Message message = new Message();
-      message.from.id = jobject["from"].Value<long>();
-      message.to.id = jobject["to"].Value<long>();
+      message.from = Guid.Parse(jobject["from"].Value<string>());
+      message.to = Guid.Parse(jobject["to"].Value<string>());
       if (jobject["type"] != null)
       {
         Type type = Type.GetType(jobject["type"].ToString());
