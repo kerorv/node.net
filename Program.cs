@@ -4,7 +4,12 @@ using Nodes;
 
 namespace Nodes.net
 {
-  class Printer : IService
+  public interface IPrinter
+  {
+    Task Print(string text);
+  }
+
+  class Printer : IService, IPrinter
   {
     public Task HandleMessage(Message msg)
     {
@@ -22,11 +27,17 @@ namespace Nodes.net
       Console.WriteLine("Printer::Release");
       return Task.CompletedTask;
     }
+
+    public Task Print(string text)
+    {
+      Console.WriteLine("Print text: {0}", text);
+      return Task.CompletedTask;
+    }
   }
 
   class Program
   {
-    static async void MakeProcess()
+    static async void MakePrinterProcess()
     {
       Guid pid = await Node.Instance.CreateProcess(new Printer());
       Console.WriteLine("Create a process[{0}].", pid);
@@ -67,7 +78,7 @@ namespace Nodes.net
           string command = tokens[0];
           if (command == "CreateProcess")
           {
-            MakeProcess();
+            MakePrinterProcess();
           }
           else if (command == "ExitProcess")
           {
@@ -90,6 +101,19 @@ namespace Nodes.net
 
             Guid pid = Guid.Parse(tokens[1]);
             TerminateProcess(pid);
+          }
+          else if (command == "PostMessage")
+          {
+            if (tokens.Length < 3)
+            {
+              Console.WriteLine("invalid param.");
+              continue;
+            }
+
+            Message msg = new Message();
+            msg.to = Guid.Parse(tokens[1]);
+            msg.content = tokens[2];
+            Node.Instance.PostMessage(msg);
           }
           else
           {
