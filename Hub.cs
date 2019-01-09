@@ -24,9 +24,20 @@ namespace Nodes.Net
 
     private async void Run()
     {
-      Socket clientSocket = await this.serverSocket.AcceptAsync();
-      IncomingChannel channel = new IncomingChannel(clientSocket);
-      channel.Start();
+      while (true)
+      {
+        try
+        {
+          Socket clientSocket = await this.serverSocket.AcceptAsync();
+          IncomingChannel channel = new IncomingChannel(clientSocket);
+          channel.Start();
+        }
+        catch (SocketException e)
+        {
+          e.ToString();
+          return;
+        }
+      }
     }
 
     internal void Send(IPEndPoint address, Message msg)
