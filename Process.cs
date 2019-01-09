@@ -23,6 +23,10 @@ namespace Nodes
     }
 
     public Guid Pid { get; private set; }
+    public T GetService<T>() where T: class
+    {
+      return (T)this.service;
+    }
 
     public void PostMessage(Message msg)
     {
@@ -45,7 +49,7 @@ namespace Nodes
     {
       // check state == Running
       // TODO:
-      
+
       const int MessageCountOnce = 32;
       for (int i = 0; i < MessageCountOnce; ++i)
       {

@@ -70,7 +70,13 @@ namespace Nodes.Net
                   e.ToString();
                   this.socket.Close();
                   this.state = State.Disconnected;
+                  break;
                 }
+              }
+
+              if (this.state == State.Connected)
+              {
+                await Task.Delay(100);
               }
             }
             break;

@@ -107,5 +107,27 @@ namespace Nodes
       await pi.Process.Exit(true);
     }
 
+    public T GetService<T>(Guid pid) where T : class
+    {
+      ProcessInfo pi;
+      if (!pis.TryGetValue(pid, out pi))
+      {
+        return null;
+      }
+
+      if (pi.Process != null)
+      {
+        // local process
+        return pi.Process.GetService<T>();
+      }
+
+      if (pi.Address != null)
+      {
+        // remote process
+        // TODO
+      }
+
+      return null;
+    }
   }
 }

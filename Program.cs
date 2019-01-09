@@ -2,7 +2,7 @@
 using System.Threading.Tasks;
 using Nodes;
 
-namespace Nodes.net
+namespace Demo
 {
   public interface IPrinter
   {
@@ -114,6 +114,19 @@ namespace Nodes.net
             msg.to = Guid.Parse(tokens[1]);
             msg.content = tokens[2];
             Node.Instance.PostMessage(msg);
+          }
+          else if (command == "GetService")
+          {
+            if (tokens.Length < 2)
+            {
+              Console.WriteLine("invalid param.");
+              continue;
+            }
+
+            Guid pid = Guid.Parse(tokens[1]);
+            IPrinter printer = Node.Instance.GetService<IPrinter>(pid);
+            Console.WriteLine("Service IPrinter: {0}", printer);
+            printer.Print("Hello");
           }
           else
           {
