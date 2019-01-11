@@ -4,15 +4,15 @@ using System.Collections.Generic;
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
-using System.Threading;
 using System.Threading.Tasks;
-using Newtonsoft.Json;
 
 namespace Nodes.Net
 {
   internal class OutgoingChannel
   {
     private ConcurrentQueue<Message> msgQueue = new ConcurrentQueue<Message>();
+    private TaskCompletionSource<object> completeSource = new TaskCompletionSource<object>();
+    private object mutex = new object();
     private Socket socket;
     private IPEndPoint host;
     private enum State
@@ -35,6 +35,18 @@ namespace Nodes.Net
     internal void Send(Message msg)
     {
       msgQueue.Enqueue(msg);
+      lock (mutex)
+      {
+        completeSource.TrySetResult(null);
+      }
+    }
+
+    private Task WaitAsync()
+    {
+      lock (mutex)
+      {
+        return completeSource.Task;
+      }
     }
 
     private async void Run()
@@ -51,32 +63,41 @@ namespace Nodes.Net
             break;
           case State.Connected:
             {
+              try
+              {
+                await WaitAsync();
+              }
+              catch
+              {
+                break;
+              }
+
               Message message;
-              while (msgQueue.TryDequeue(out message))
+              while (this.state == State.Connected && msgQueue.TryDequeue(out message))
               {
                 string jsonString = Message.Serialize(message);
                 byte[] body = Encoding.ASCII.GetBytes(jsonString);
                 byte[] header = BitConverter.GetBytes(body.Length);
-                List<ArraySegment<byte>> dataList = new List<ArraySegment<byte>>(){
-                  new ArraySegment<byte>(header),
-                  new ArraySegment<byte>(body),
-                };
+                List<ArraySegment<byte>> dataList = new List<ArraySegment<byte>>()
+                  {
+                    new ArraySegment<byte>(header),
+                    new ArraySegment<byte>(body),
+                  };
+
                 try
                 {
-                  await this.socket.SendAsync(dataList, SocketFlags.None);
+                  int sendBytes = await this.socket.SendAsync(dataList, SocketFlags.None);
                 }
-                catch (SocketException e)
+                catch (Exception e)
                 {
-                  e.ToString();
-                  this.socket.Close();
-                  this.state = State.Disconnected;
+                  Console.WriteLine("OutgoingChannel::Run exception: {0}", e.ToString());
                   break;
                 }
               }
 
-              if (this.state == State.Connected)
+              lock (mutex)
               {
-                await Task.Delay(100);
+                completeSource = new TaskCompletionSource<object>();
               }
             }
             break;
@@ -91,6 +112,18 @@ namespace Nodes.Net
             break;
         }
       }
+    }
+
+    public void Close()
+    {
+      msgQueue.Clear();
+
+      lock (mutex)
+      {
+        completeSource.TrySetCanceled();
+      }
+
+      this.state = State.Closing;
     }
   }
 }

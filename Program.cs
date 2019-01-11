@@ -58,7 +58,12 @@ namespace Demo
     static void Main(string[] args)
     {
       Console.WriteLine("Hello World!");
-
+      Node.Instance.Start();
+      Console.ReadLine();
+      Node.Instance.Close();
+      Console.ReadLine();
+      return;
+/*
       while (true)
       {
         string input = Console.ReadLine();
@@ -133,7 +138,7 @@ namespace Demo
             Console.WriteLine("unknown command");
           }
         }
-      }
+      }*/
     }
   }
 }

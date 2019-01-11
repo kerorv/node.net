@@ -7,6 +7,7 @@ namespace Nodes.Net
   internal class IncomingChannel
   {
     private Socket socket;
+    private volatile bool closed = false;
     private const int BufferInitSize = 1024;
     private const int PacketHeaderSize = sizeof(int);
     private byte[] buffer = new byte[BufferInitSize];
@@ -19,16 +20,40 @@ namespace Nodes.Net
 
     internal async void Start()
     {
-      ArraySegment<byte> segment = new ArraySegment<byte>(
-        buffer, this.nextRecvPos, buffer.Length - this.nextRecvPos);
-      int recvBytes = await this.socket.ReceiveAsync(segment, SocketFlags.None);
-      this.nextRecvPos += recvBytes;
-      int parsePos = ParsePackets();
-      if (parsePos != 0)
+      while (true)
       {
-        Array.Copy(buffer, parsePos, buffer, 0, this.nextRecvPos - parsePos);
-        this.nextRecvPos = 0;
+        try
+        {
+          ArraySegment<byte> segment = new ArraySegment<byte>(
+            buffer, this.nextRecvPos, buffer.Length - this.nextRecvPos);
+          int recvBytes = await this.socket.ReceiveAsync(segment, SocketFlags.None);
+          Console.WriteLine("receive {0} bytes.", recvBytes);
+          if (recvBytes <= 0)
+          {
+            CloseSocket();
+            return;
+          }
+
+          this.nextRecvPos += recvBytes;
+          int parsePos = ParsePackets();
+          if (parsePos != 0)
+          {
+            Array.Copy(buffer, parsePos, buffer, 0, this.nextRecvPos - parsePos);
+            this.nextRecvPos = 0;
+          }
+        }
+        catch (Exception e)
+        {
+          Console.WriteLine("IncomingChannel::Start exception: {0}", e.Message);
+          CloseSocket();
+          return;
+        }
       }
+    }
+
+    internal void Close()
+    {
+      CloseSocket();
     }
 
     private int ParsePackets()
@@ -65,6 +90,15 @@ namespace Nodes.Net
     private void OnMessage(Message message)
     {
       Node.Instance.PostMessage(message);
+    }
+
+    private void CloseSocket()
+    {
+      if (!this.closed)
+      {
+        this.socket.Close();
+        this.closed = true;
+      }
     }
   }
 }

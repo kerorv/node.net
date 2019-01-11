@@ -13,28 +13,48 @@ namespace Nodes.Net
     private Socket serverSocket;
     private ConcurrentDictionary<IPEndPoint, Lazy<OutgoingChannel>> outChannels =
       new ConcurrentDictionary<IPEndPoint, Lazy<OutgoingChannel>>();
+    private List<IncomingChannel> inChannels = new List<IncomingChannel>();
 
     internal void Start()
     {
       this.serverSocket = new Socket(SocketType.Stream, ProtocolType.Tcp);
       this.serverSocket.Bind(serverEP);
       this.serverSocket.Listen(32);
+
       Run();
+    }
+
+    internal void Close()
+    {
+      this.serverSocket.Close();
+
+      foreach (IncomingChannel channel in inChannels)
+      {
+        channel.Close();
+      }
+
+      foreach (var lazyChannel in outChannels.Values)
+      {
+        var outChanel = lazyChannel.Value;
+        outChanel.Close();
+      }
     }
 
     private async void Run()
     {
+
       while (true)
       {
         try
         {
           Socket clientSocket = await this.serverSocket.AcceptAsync();
           IncomingChannel channel = new IncomingChannel(clientSocket);
+          inChannels.Add(channel);
           channel.Start();
         }
-        catch (SocketException e)
+        catch (Exception e)
         {
-          e.ToString();
+          Console.WriteLine("Hub::Run exception: {0}", e.Message);
           return;
         }
       }

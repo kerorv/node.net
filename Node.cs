@@ -25,9 +25,14 @@ namespace Nodes
     {
     }
 
-    void Start()
+    public void Start()
     {
       hub.Start();
+    }
+
+    public void Close()
+    {
+      hub.Close();
     }
 
     public void PostMessage(Message msg)
