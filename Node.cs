@@ -17,12 +17,13 @@ namespace Nodes
     }
     private ConcurrentDictionary<Guid, ProcessInfo> pis = new ConcurrentDictionary<Guid, ProcessInfo>();
 
-    private Net.Hub hub = new Net.Hub();
+    private Net.Hub hub;
     private static readonly Lazy<Node> lazy = new Lazy<Node>(() => new Node());
     public static Node Instance { get { return lazy.Value; } }
 
     private Node()
     {
+      hub = new Net.Hub(new Net.DispatchRemoteMessageDelegate((from, message)=>PostMessage(message)));
     }
 
     public void Start()

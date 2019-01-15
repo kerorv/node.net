@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace Nodes.Net
@@ -12,22 +13,19 @@ namespace Nodes.Net
   {
     private ConcurrentQueue<Message> msgQueue = new ConcurrentQueue<Message>();
     private TaskCompletionSource<object> completeSource = new TaskCompletionSource<object>();
-    private object mutex = new object();
+    private CancellationTokenSource cancelSource = new CancellationTokenSource();
+    private object mutexWaitQueue = new object();
     private Socket socket;
     private IPEndPoint host;
-    private enum State
-    {
-      Disconnected,
-      Connected,
-      Closing,
-      Closed,
-    }
-    private State state = State.Disconnected;
+    private const int StateDisconnected = 0;
+    private const int StateConnected = 1;
+    private const int StateClosing = 2;
+    private const int StateClosed = 3;
+    private volatile int state = StateDisconnected;
     private byte[] packetHeader = new byte[4];
 
     internal OutgoingChannel(IPEndPoint remote)
     {
-      socket = new Socket(SocketType.Stream, ProtocolType.Tcp);
       host = remote;
       Run();
     }
@@ -35,95 +33,124 @@ namespace Nodes.Net
     internal void Send(Message msg)
     {
       msgQueue.Enqueue(msg);
-      lock (mutex)
+      lock (mutexWaitQueue)
       {
         completeSource.TrySetResult(null);
       }
     }
 
-    private Task WaitAsync()
+    internal void Close()
     {
-      lock (mutex)
+      msgQueue.Clear();
+
+      lock (mutexWaitQueue)
+      {
+        completeSource.TrySetResult(null);
+      }
+
+      this.state = StateClosing;
+    }
+
+    private Task WaitQueueAsync()
+    {
+      lock (mutexWaitQueue)
       {
         return completeSource.Task;
       }
     }
 
+    private void ResetWaitEvent()
+    {
+      lock (mutexWaitQueue)
+      {
+        completeSource = new TaskCompletionSource<object>();
+      }
+    }
+
     private async void Run()
     {
-      while (this.state != State.Closed)
+      while (this.state != StateClosed)
       {
         switch (this.state)
         {
-          case State.Disconnected:
-            {
-              await socket.ConnectAsync(host);
-              this.state = State.Connected;
-            }
-            break;
-          case State.Connected:
+          case StateDisconnected:
             {
               try
               {
-                await WaitAsync();
+                if (this.socket == null)
+                {
+                  this.socket = new Socket(SocketType.Stream, ProtocolType.Tcp);
+                }
+
+                await socket.ConnectAsync(host);
+                Interlocked.CompareExchange(ref this.state, StateConnected, StateDisconnected);
               }
-              catch
+              catch (Exception e)
               {
-                break;
+                Console.WriteLine("Connect exception: {0}", e.ToString());
+                CloseSocket();
+
+                await Task.Delay(1000 * 10);
               }
+            }
+            break;
+          case StateConnected:
+            {
+              await WaitQueueAsync();
 
               Message message;
-              while (this.state == State.Connected && msgQueue.TryDequeue(out message))
+              while (msgQueue.TryDequeue(out message))
               {
-                string jsonString = Message.Serialize(message);
-                byte[] body = Encoding.ASCII.GetBytes(jsonString);
-                byte[] header = BitConverter.GetBytes(body.Length);
-                List<ArraySegment<byte>> dataList = new List<ArraySegment<byte>>()
+                try
+                {
+                  string jsonString = Message.Serialize(message);
+                  byte[] body = Encoding.ASCII.GetBytes(jsonString);
+                  byte[] header = BitConverter.GetBytes(body.Length);
+                  List<ArraySegment<byte>> dataList = new List<ArraySegment<byte>>()
                   {
                     new ArraySegment<byte>(header),
                     new ArraySegment<byte>(body),
                   };
 
-                try
+                  await this.socket.SendAsync(dataList, SocketFlags.None);
+                }
+                catch (SocketException e)
                 {
-                  int sendBytes = await this.socket.SendAsync(dataList, SocketFlags.None);
+                  Console.WriteLine("Send exception: {0}", e.ToString());
+
+                  CloseSocket();
+                  Interlocked.CompareExchange(ref this.state, StateDisconnected, StateConnected);
+                  break;
                 }
                 catch (Exception e)
                 {
-                  Console.WriteLine("OutgoingChannel::Run exception: {0}", e.ToString());
-                  break;
+                  Console.WriteLine("Send exception: {0}", e.ToString());
                 }
               }
 
-              lock (mutex)
-              {
-                completeSource = new TaskCompletionSource<object>();
-              }
+              ResetWaitEvent();
             }
             break;
-          case State.Closing:
+          case StateClosing:
             {
-              socket.Close();
-              this.state = State.Closed;
+              CloseSocket();
+              this.state = StateClosed;
             }
             break;
-          case State.Closed:
+          case StateClosed:
           default:
             break;
         }
       }
     }
 
-    public void Close()
+    private void CloseSocket()
     {
-      msgQueue.Clear();
-
-      lock (mutex)
+      if (this.socket != null)
       {
-        completeSource.TrySetCanceled();
+        this.socket.Close();
+        this.socket = null;
       }
-
-      this.state = State.Closing;
     }
   }
 }

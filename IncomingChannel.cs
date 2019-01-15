@@ -1,4 +1,5 @@
 using System;
+using System.Net;
 using System.Net.Sockets;
 using System.Text;
 
@@ -12,17 +13,19 @@ namespace Nodes.Net
     private const int PacketHeaderSize = sizeof(int);
     private byte[] buffer = new byte[BufferInitSize];
     private int nextRecvPos;
+    private DispatchRemoteMessageDelegate dispatcher;
 
-    internal IncomingChannel(Socket socket)
+    internal IncomingChannel(Socket socket, DispatchRemoteMessageDelegate dispatcher)
     {
       this.socket = socket;
+      this.dispatcher = dispatcher;
     }
 
     internal async void Start()
     {
-      while (true)
+      try
       {
-        try
+        while (true)
         {
           ArraySegment<byte> segment = new ArraySegment<byte>(
             buffer, this.nextRecvPos, buffer.Length - this.nextRecvPos);
@@ -42,12 +45,11 @@ namespace Nodes.Net
             this.nextRecvPos = 0;
           }
         }
-        catch (Exception e)
-        {
-          Console.WriteLine("IncomingChannel::Start exception: {0}", e.Message);
-          CloseSocket();
-          return;
-        }
+      }
+      catch (Exception e)
+      {
+        Console.WriteLine("IncomingChannel::Start exception: {0}", e.Message);
+        CloseSocket();
       }
     }
 
@@ -61,35 +63,46 @@ namespace Nodes.Net
       int idx = 0;
       while (idx < this.nextRecvPos)
       {
-        if (idx + PacketHeaderSize >= this.nextRecvPos)
+        if (idx + PacketHeaderSize > this.nextRecvPos)
         {
           break;
         }
 
         int packetBodyLength = BitConverter.ToInt32(buffer, idx);
-        if (idx + PacketHeaderSize + packetBodyLength >= this.nextRecvPos)
+        if (packetBodyLength <= 0)
+        {
+          break;
+        }
+        if (idx + PacketHeaderSize + packetBodyLength > this.nextRecvPos)
         {
           break;
         }
 
         try
         {
-          string jsonString = Encoding.ASCII.GetString(buffer, idx, packetBodyLength);
+          string jsonString = Encoding.ASCII.GetString(buffer, idx + PacketHeaderSize, packetBodyLength);
           Message message = Message.Deserialize(jsonString);
-          OnMessage(message);
+          OnMessage(this.socket.RemoteEndPoint as IPEndPoint, message);
+        }
+        catch (Exception e)
+        {
+          Console.WriteLine("ParsePackets exception: {0}", e);
         }
         finally
         {
-          idx += PacketHeaderSize;
+          idx += (PacketHeaderSize + packetBodyLength);
         }
       }
 
       return idx;
     }
 
-    private void OnMessage(Message message)
+    private void OnMessage(IPEndPoint from, Message message)
     {
-      Node.Instance.PostMessage(message);
+      if (dispatcher != null)
+      {
+        dispatcher(from, message);
+      }
     }
 
     private void CloseSocket()
